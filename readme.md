@@ -12,4 +12,4 @@ The RandDynEnv environment simulates a reinforcement learning (RL) task where an
 
 ## `train.py`
 This is the result of `train.py` when the `env.reset` does not change the dynamics and motion, i.e., it is for a single dynamics and motion.
-<video src="video.mp4" controls="controls" style="max-width: 100%; height: auto;"></video>
+![training-progress](video.gif)
