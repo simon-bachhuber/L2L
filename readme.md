@@ -47,6 +47,20 @@ while not done:
         env.reset()
 ```
 
+### Structure of Observations
+```python
+# `obs` is a dictionary
+{
+    # the remaining time before the reward transitions into punishing tracking error
+    "countdown": np.ndarray,  # Shape: (1,)
+    # the current desired reference
+    "ref": np.ndarray,        # Shape: (n_outputs,)
+    # the current system output
+    "obs": np.ndarray         # Shape: (n_outputs,)
+}
+# `action` is a np.ndarray with shape (n_inputs,)
+```
+
 ## Parameters
 - **state_dim_min** *(int, default=3)*: Minimum number of state variables.  
 - **state_dim_max** *(int, default=3)*: Maximum number of state variables.  
