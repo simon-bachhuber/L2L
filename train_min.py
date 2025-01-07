@@ -7,8 +7,8 @@ import rand_dyn_env  # noqa: F401
 
 env = gym.make(
     "RandDyn-v0",
-    on_reset_draw_motion=True,
-    on_reset_draw_sys=True,
+    on_reset_draw_motion=False,
+    on_reset_draw_sys=False,
 )
 env = VecFrameStack(make_vec_env(env, 1), 6)
 model = PPO("MultiInputPolicy", env)
