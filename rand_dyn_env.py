@@ -12,7 +12,7 @@ from sklearn.gaussian_process.kernels import RBF
 
 
 class RandDynEnv(gym.Env):
-    metadata = dict(render_modes=["rgb_array"])
+    metadata = dict(render_modes=["rgb_array"], render_fps=None)
     render_mode = "rgb_array"
 
     def __init__(
@@ -29,6 +29,7 @@ class RandDynEnv(gym.Env):
         on_reset_draw_transition_time: bool = True,
         transition_time: float = 30,
         action_limit: float = 1.0,
+        draw_random_motion_method: str = "gp",
     ):
         """
         Initialize a randomized dynamic environment for reinforcement learning.
@@ -70,6 +71,11 @@ class RandDynEnv(gym.Env):
 
         action_limit : float, optional (default=1.0)
             Upper and lower limit for actions. Actions are clipped to [-action_limit, action_limit].
+        draw_random_motion_method : str, optional (default=gp)
+            Specifies the method that is used to generate a random feedforward signal `us` which is
+            then applied to the system to generate a feasible reference trajectory. Possible values
+            are `gp` (Gaussian Process), `rff` (Random Fourier Features), `lpf-noise` (Low-Pass-Filtered-Whitenoise),
+            and `ou-noise` (Ornstein-Uhlenbeck Process)
 
         Raises
         ------
@@ -86,6 +92,7 @@ class RandDynEnv(gym.Env):
         self.state_dim_max = state_dim_max
         self.T = T
         self.Ts = Ts
+        self.metadata["render_fps"] = int(1 / Ts)
         self.ts = np.arange(T, step=Ts)
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
@@ -98,6 +105,7 @@ class RandDynEnv(gym.Env):
         self.transition_time = np.array([transition_time])
         self._obss = None
         self._frame = None
+        self._draw_random_motion_method = draw_random_motion_method
 
         assert (
             n_inputs == 1
@@ -149,19 +157,73 @@ class RandDynEnv(gym.Env):
             valid_sys = observable and controllable
 
     def draw_rand_motion(self):
+        if self._draw_random_motion_method == "gp":
+            us = self._draw_us_gp()
+        elif self._draw_random_motion_method == "rff":
+            us = self._draw_us_random_fourier_features()
+        elif self._draw_random_motion_method == "lpf-noise":
+            us = self._draw_us_lpf_noise()
+        elif self._draw_random_motion_method == "ou-noise":
+            us = self._draw_us_ou_noise()
+        else:
+            raise Exception(f"{self._draw_random_motion_method} not valid")
+
+        # apply action limits such that reference motion *is feasible*
+        us = np.clip(us, self.action_space.low, self.action_space.high)
+        yout = ctrl.forced_response(self._ss, T=self.ts, U=us.T).outputs
+        self._us = us
+        self._ref = yout[:, None]
+
+    def _draw_us_gp(self):
         seed = self.np_random.integers(0, int(1e8))
         us = GaussianProcessRegressor(kernel=0.15 * RBF(0.75)).sample_y(
             self.ts[:, np.newaxis], random_state=seed
         )
-        us = (us - np.mean(us)) / np.std(us)
-        us *= 0.25
+        us = ((us - np.mean(us)) / np.std(us)) * 0.25
+        return us
 
-        # apply action limits such that reference motion *is feasible*
-        us = np.clip(us, self.action_space.low, self.action_space.high)
+    def _draw_us_random_fourier_features(self):
+        num_features = 10  # Controls smoothness (higher = less smooth)
+        length_scale = 0.75  # Similar to RBF kernel length scale
 
-        yout = ctrl.forced_response(self._ss, T=self.ts, U=us.T).outputs
-        self._us = us
-        self._ref = yout[:, None]
+        omega = (
+            self.np_random.standard_normal(num_features) / length_scale
+        )  # Random frequencies
+        phi = self.np_random.uniform(0, 2 * np.pi, num_features)  # Random phases
+        us = np.sum(np.sin(np.outer(self.ts, omega) + phi), axis=1)
+
+        # Normalize and scale
+        us = ((us - np.mean(us)) / np.std(us)) * 0.25
+        return us
+
+    def _draw_us_lpf_noise(self):
+        try:
+            from scipy.ndimage import gaussian_filter1d
+        except ImportError:
+            raise Exception("draw method `lpf-noise` requires `scipy`")
+
+        us = self.np_random.standard_normal(len(self.ts))  # White noise
+        us = gaussian_filter1d(
+            us, sigma=15
+        )  # Smooth with Gaussian filter, smoother with higher sigma
+        us = ((us - np.mean(us)) / np.std(us)) * 0.25  # Normalize and scale
+        return us
+
+    def _draw_us_ou_noise(self):
+        dt = self.ts[1] - self.ts[0]  # Time step
+        theta = 0.5  # Mean-reverting speed (lower = smoother)
+        sigma = 0.1  # Noise intensity
+        us = np.zeros_like(self.ts)
+
+        for i in range(1, len(self.ts)):
+            us[i] = (
+                us[i - 1]
+                + theta * (-us[i - 1]) * dt
+                + sigma * np.sqrt(dt) * self.np_random.standard_normal()
+            )
+
+        us = ((us - np.mean(us)) / np.std(us)) * 0.25
+        return us
 
     def draw_rand_transition_time(self):
         self.transition_time = self.np_random.uniform(
@@ -198,7 +260,7 @@ class RandDynEnv(gym.Env):
         self._u = action
         self._simulate_one_timestep()
 
-        truncated = self.ts[self._t] >= (self.T - 1)
+        truncated = bool(self.ts[self._t] >= (self.T - 1))
         terminated = truncated
         obs = self._get_obs()
         info = self._get_info()
@@ -208,7 +270,7 @@ class RandDynEnv(gym.Env):
         if cd > self.reward_ramp:
             reward = 0.0
         else:
-            reward *= (self.reward_ramp - cd) / self.reward_ramp
+            reward *= (self.reward_ramp - cd[0]) / self.reward_ramp
 
         # only done for rendering
         self._obss.append(obs["obs"])
