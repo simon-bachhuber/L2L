@@ -1,0 +1,6 @@
+gymnasium
+stable-baselines3
+numpy < 2
+scikit-learn
+matplotlib
+control
