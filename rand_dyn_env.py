@@ -446,11 +446,11 @@ def _rss_generate(
     # Make masks to zero out some of the elements.
     while True:
         Bmask = rand(states, inputs) < pBCmask
-        if any(Bmask):  # Retry if we get all zeros.
+        if np.any(Bmask):  # Retry if we get all zeros.
             break
     while True:
         Cmask = rand(outputs, states) < pBCmask
-        if any(Cmask):  # Retry if we get all zeros.
+        if np.any(Cmask):  # Retry if we get all zeros.
             break
     if rand() < pDzero:
         Dmask = np.zeros((outputs, inputs))
