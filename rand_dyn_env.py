@@ -310,7 +310,10 @@ class RandDynEnv(gym.Env):
         if self.render_mode != "rgb_array":
             raise NotImplementedError
 
-        import matplotlib.pyplot as plt
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise Exception("`render` requires `matplotlib`")
 
         fig = plt.figure()
         ax = fig.gca()

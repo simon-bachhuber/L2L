@@ -1,6 +1,5 @@
 gymnasium
-stable-baselines3
-numpy < 2
+stable-baselines3 >= 2.5.0
+numpy
 scikit-learn
-matplotlib
 control
