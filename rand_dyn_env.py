@@ -13,7 +13,6 @@ from sklearn.gaussian_process.kernels import RBF
 
 class RandDynEnv(gym.Env):
     metadata = dict(render_modes=["rgb_array"], render_fps=None)
-    render_mode = "rgb_array"
 
     def __init__(
         self,
@@ -29,7 +28,9 @@ class RandDynEnv(gym.Env):
         on_reset_draw_transition_time: bool = True,
         transition_time: float = 30,
         action_limit: float = 1.0,
-        draw_random_motion_method: str = "gp",
+        # obs_limit: Optional[float] = None,
+        draw_random_motion_method: str = "rff",
+        render_mode: str = "rgb_array",
     ):
         """
         Initialize a randomized dynamic environment for reinforcement learning.
@@ -71,11 +72,15 @@ class RandDynEnv(gym.Env):
 
         action_limit : float, optional (default=1.0)
             Upper and lower limit for actions. Actions are clipped to [-action_limit, action_limit].
-        draw_random_motion_method : str, optional (default=gp)
+
+        draw_random_motion_method : str, optional (default='rff')
             Specifies the method that is used to generate a random feedforward signal `us` which is
             then applied to the system to generate a feasible reference trajectory. Possible values
             are `gp` (Gaussian Process), `rff` (Random Fourier Features), `lpf-noise` (Low-Pass-Filtered-Whitenoise),
             and `ou-noise` (Ornstein-Uhlenbeck Process)
+
+        render_mode : str | None, optional (default='rgb_array')
+            Specifies how the `env.render()` function behaves. If `None` no rendering takes place.
 
         Raises
         ------
@@ -106,6 +111,7 @@ class RandDynEnv(gym.Env):
         self._obss = None
         self._frame = None
         self._draw_random_motion_method = draw_random_motion_method
+        self.render_mode = render_mode
 
         assert (
             n_inputs == 1
@@ -306,8 +312,11 @@ class RandDynEnv(gym.Env):
     def _update_figure(self):
         self._fig.gca().scatter(self.ts[self._t], self._get_obs()["obs"], c="black")
 
-    def render(self):
-        if self.render_mode != "rgb_array":
+    def render(self) -> np.ndarray | None:
+        if self.render_mode is None:
+            return
+
+        if self.render_mode not in self.metadata["render_modes"]:
             raise NotImplementedError
 
         try:
