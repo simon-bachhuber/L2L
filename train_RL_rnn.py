@@ -3,15 +3,11 @@ from datetime import datetime
 import fire
 import gymnasium as gym
 from gymnasium.wrappers import FlattenObservation
-from gymnasium.wrappers import NormalizeObservation
-from gymnasium.wrappers import NormalizeReward
-
 import numpy as np
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import SubprocVecEnv, VecMonitor, DummyVecEnv
-
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import VecMonitor
 from torch.utils.tensorboard import SummaryWriter
 
 import rand_dyn_env  # noqa: F401
@@ -65,15 +61,15 @@ class RenderToTensorboardCallback(BaseCallback):
 
 def env_fn(on_reset_draw: bool = True):
     return FlattenObservation(
-                gym.make(
-                    "RandDyn-v0",
-                    on_reset_draw_motion=on_reset_draw,
-                    on_reset_draw_sys=on_reset_draw,
-                    on_reset_draw_transition_time=on_reset_draw,
-                    draw_random_motion_method="rff",
-                    draw_step_function_reference=True
-                )
-            )
+        gym.make(
+            "RandDyn-v0",
+            on_reset_draw_motion=on_reset_draw,
+            on_reset_draw_sys=on_reset_draw,
+            on_reset_draw_transition_time=on_reset_draw,
+            draw_random_motion_method="rff",
+            draw_step_function_reference=True,
+        )
+    )
 
 
 def main(
@@ -89,9 +85,9 @@ def main(
     n_epochs: int = 10,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
-    render_log_freq: int = 100_000
+    render_log_freq: int = 100_000,
 ):
-    #env = make_vec_env(env_fn, n_envs=n_envs, seed=seed)
+    # env = make_vec_env(env_fn, n_envs=n_envs, seed=seed)
     env = VecMonitor(DummyVecEnv([env_fn] * n_envs))
     model = RecurrentPPO(
         "MlpLstmPolicy",
