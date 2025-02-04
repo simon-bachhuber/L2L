@@ -28,9 +28,10 @@ class RandDynEnv(gym.Env):
         on_reset_draw_transition_time: bool = True,
         transition_time: float = 30,
         action_limit: float = 1.0,
-        # obs_limit: Optional[float] = None,
         draw_random_motion_method: str = "rff",
+        draw_step_function_reference: bool = False,
         render_mode: str = "rgb_array",
+        scale_by_step_response: bool = True,
     ):
         """
         Initialize a randomized dynamic environment for reinforcement learning.
@@ -109,8 +110,10 @@ class RandDynEnv(gym.Env):
         self._ref = None
         self.transition_time = np.array([transition_time])
         self._obss = None
-        self._frame = None
+        #self._frame = None
         self._draw_random_motion_method = draw_random_motion_method
+        self._draw_step_function_reference = draw_step_function_reference
+        self._scale_by_step_response = scale_by_step_response
         self.render_mode = render_mode
 
         assert (
@@ -146,7 +149,7 @@ class RandDynEnv(gym.Env):
         while not valid_sys:
             # this makes it be continuous time
             self._ss = rss(
-                self.np_random, state_dim, self.n_outputs, self.n_inputs, dt=0
+                self.np_random, state_dim, self.n_outputs, self.n_inputs, dt=0, scale_by_step_response=self._scale_by_step_response
             )
 
             A, B, C = self._ss.A, self._ss.B, self._ss.C
@@ -176,9 +179,10 @@ class RandDynEnv(gym.Env):
 
         # apply action limits such that reference motion *is feasible*
         us = np.clip(us, self.action_space.low, self.action_space.high)
-        yout = ctrl.forced_response(self._ss, T=self.ts, U=us.T).outputs
+        # returns (n_outputs, timesteps)
+        yout = ctrl.forced_response(self._ss, T=self.ts, U=us.T, squeeze=False).outputs
         self._us = us
-        self._ref = yout[:, None]
+        self._ref = yout.T
 
     def _draw_us_gp(self):
         seed = self.np_random.integers(0, int(1e8))
@@ -240,14 +244,21 @@ class RandDynEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
-        self._frame = self.render()
-
+        first_reset = True if self._ref is None else False
         if self.on_reset_draw_sys or self._ss is None:
             self.draw_rand_system()
         if self.on_reset_draw_motion or self._ref is None:
             self.draw_rand_motion()
         if self.on_reset_draw_transition_time:
             self.draw_rand_transition_time()
+        
+        if self._draw_step_function_reference:
+            if self.on_reset_draw_motion or first_reset:
+                N = self._ref.shape[0]
+                # this ensures that the step value is feasible
+                step_value = self._ref[self.np_random.integers(low=int(0.1 * N), high=N)]
+                self._ref[int(self.transition_time[0] / self.Ts):] = step_value
+
         self._t = 0
         self._x = np.zeros((self._ss.A.shape[0],))
         self._u = np.zeros((self.n_inputs,))
@@ -329,14 +340,16 @@ class RandDynEnv(gym.Env):
         ax.grid()
         ax.set_xlabel("Time [s]")
 
-        if self._ref is not None and self._obss is not None:
+        if self._ref is not None:
             ax.plot(self.ts, self._ref, label="ref")
+        if self._obss is not None:
             obs = np.vstack(self._obss)
             ax.plot(self.ts[: len(obs)], obs, label="obs")
-            ax.axvline(
-                x=self.transition_time, color="red", linestyle="--", label="transition"
-            )
-            ax.legend()
+            
+        ax.axvline(
+            x=self.transition_time, color="red", linestyle="--", label="transition"
+        )
+        ax.legend()
         fig.canvas.draw()
         frame = np.asarray(fig.canvas.buffer_rgba())[..., :3]
         plt.close(fig)
@@ -354,7 +367,7 @@ def _randn(np_random, *args):
     return np_random.standard_normal(size=args)
 
 
-def rss(np_random, states=1, outputs=1, inputs=1, strictly_proper=False, **kwargs):
+def rss(np_random, states=1, outputs=1, inputs=1, strictly_proper=False, scale_by_step_response=False, **kwargs):
     """Create a stable random state space object.
 
     Parameters
@@ -414,6 +427,16 @@ def rss(np_random, states=1, outputs=1, inputs=1, strictly_proper=False, **kwarg
         name=name,
         strictly_proper=strictly_proper,
     )
+
+    if scale_by_step_response:
+        # shape is (n_outputs, n_inputs, timesteps)
+        yout = ctrl.step_response(sys, squeeze=False).outputs
+        yout = yout[:, 0].T
+        alpha = np.max(np.abs(yout), axis=0)
+        C = (sys.C.T / alpha).T
+        D = (sys.D.T / alpha).T
+
+        sys = StateSpace(sys.A, sys.B, C, D, sys.dt)
 
     return StateSpace(
         sys, name=name, states=states, inputs=inputs, outputs=outputs, dt=dt, **kwargs
