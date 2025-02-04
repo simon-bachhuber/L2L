@@ -29,8 +29,8 @@ class RandDynEnv(gym.Env):
         transition_time: float = 30,
         action_limit: float = 1.0,
         draw_random_motion_method: str = "rff",
-        draw_step_function_reference: bool = False,
         render_mode: str = "rgb_array",
+        draw_step_function_reference: bool = False,
         scale_by_step_response: bool = True,
     ):
         """
@@ -83,6 +83,13 @@ class RandDynEnv(gym.Env):
         render_mode : str | None, optional (default='rgb_array')
             Specifies how the `env.render()` function behaves. If `None` no rendering takes place.
 
+        draw_step_function_reference : bool, optional (default=False)
+            If `True` the reference will become a constant step after transition time has passed.
+
+        scale_by_step_response : bool, optional (default=True)
+            Scales the output of the internally generated random dynamics by its step response. This ensures
+            that the output will always be of a similar scale between several dynamics.
+
         Raises
         ------
         AssertionError
@@ -110,7 +117,7 @@ class RandDynEnv(gym.Env):
         self._ref = None
         self.transition_time = np.array([transition_time])
         self._obss = None
-        #self._frame = None
+        # self._frame = None
         self._draw_random_motion_method = draw_random_motion_method
         self._draw_step_function_reference = draw_step_function_reference
         self._scale_by_step_response = scale_by_step_response
@@ -149,7 +156,12 @@ class RandDynEnv(gym.Env):
         while not valid_sys:
             # this makes it be continuous time
             self._ss = rss(
-                self.np_random, state_dim, self.n_outputs, self.n_inputs, dt=0, scale_by_step_response=self._scale_by_step_response
+                self.np_random,
+                state_dim,
+                self.n_outputs,
+                self.n_inputs,
+                dt=0,
+                scale_by_step_response=self._scale_by_step_response,
             )
 
             A, B, C = self._ss.A, self._ss.B, self._ss.C
@@ -251,13 +263,17 @@ class RandDynEnv(gym.Env):
             self.draw_rand_motion()
         if self.on_reset_draw_transition_time:
             self.draw_rand_transition_time()
-        
+
         if self._draw_step_function_reference:
             if self.on_reset_draw_motion or first_reset:
                 N = self._ref.shape[0]
                 # this ensures that the step value is feasible
-                step_value = self._ref[self.np_random.integers(low=int(0.1 * N), high=N)]
-                self._ref[int(self.transition_time[0] / self.Ts):] = step_value
+                step_value = self._ref[
+                    self.np_random.integers(low=int(0.1 * N), high=N)
+                ]
+                self._ref[int(self.transition_time[0] / self.Ts) :] = (  # noqa: E203
+                    step_value  # noqa: E203
+                )
 
         self._t = 0
         self._x = np.zeros((self._ss.A.shape[0],))
@@ -345,7 +361,7 @@ class RandDynEnv(gym.Env):
         if self._obss is not None:
             obs = np.vstack(self._obss)
             ax.plot(self.ts[: len(obs)], obs, label="obs")
-            
+
         ax.axvline(
             x=self.transition_time, color="red", linestyle="--", label="transition"
         )
@@ -367,7 +383,15 @@ def _randn(np_random, *args):
     return np_random.standard_normal(size=args)
 
 
-def rss(np_random, states=1, outputs=1, inputs=1, strictly_proper=False, scale_by_step_response=False, **kwargs):
+def rss(
+    np_random,
+    states=1,
+    outputs=1,
+    inputs=1,
+    strictly_proper=False,
+    scale_by_step_response=False,
+    **kwargs,
+):
     """Create a stable random state space object.
 
     Parameters

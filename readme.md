@@ -73,7 +73,11 @@ while not done:
 - **on_reset_draw_motion** *(bool, default=True)*: If True, draw a new random reference motion upon environment reset.  
 - **on_reset_draw_transition_time** *(bool, default=True)*: If True, draw a new random transition time upon environment reset.  
 - **transition_time** *(float, default=30)*: Initial transition time in seconds, used when `on_reset_draw_transition_time` is False.  
-- **action_limit** *(float, default=1.0)*: Upper and lower limit for actions. Actions are clipped to [-action_limit, action_limit].  
+- **action_limit** *(float, default=1.0)*: Upper and lower limit for actions. Actions are clipped to [-action_limit, action_limit]. 
+- **draw_random_motion_method** *(str, default='rff')*: Specifies the method used to generate a random feedforward signal `us`, which is then applied to the system to create a feasible reference trajectory. Possible values are `gp` (Gaussian Process), `rff` (Random Fourier Features), `lpf-noise` (Low-Pass-Filtered-Whitenoise), and `ou-noise` (Ornstein-Uhlenbeck Process).  
+- **render_mode** *(str | None, default='rgb_array')*: Specifies how the `env.render()` function behaves. If `None`, no rendering takes place.  
+- **draw_step_function_reference** *(bool, default=False)*: If `True`, the reference will become a constant step after the transition time has passed.  
+- **scale_by_step_response** *(bool, default=True)*: Scales the output of the internally generated random dynamics by its step response. This ensures that the output will always be of a similar scale between different dynamics.  
 
 # Simple PPO example `train.py`
 This is the result of `train.py` when the `env.reset` does not change the dynamics and motion, i.e., it is for a single dynamics and motion.
