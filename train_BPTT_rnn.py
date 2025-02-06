@@ -1,7 +1,6 @@
 from functools import partial
 
 import flax.linen as nn
-from flax.struct import dataclass
 import jax
 import jax.numpy as jnp
 import optax
@@ -12,41 +11,31 @@ from ray.tune.schedulers import ASHAScheduler
 from rand_dyn_env import RandDynEnv
 
 
-@dataclass
-class LTI:
-    batch_size: int
-    state_dim: int
-    A: jax.Array
-    B: jax.Array
-    C: jax.Array
-    refs: jax.Array
-    Ts: float
 
-    def step(self, action: jax.Array, x: jax.Array):
-        "Returns: (y, next_x)"
+def _step_lti(A, B, C, action, x, Ts):
+    "Returns: (y, next_x)"
 
-        @jax.vmap
-        def _timestep(A, B, C, x, u):
-            rhs = lambda t, x: A @ x + B @ u
-            next_x = self._runge_kutta(rhs, 0, x, self.Ts)
-            y = C @ next_x
-            return next_x, y
+    @jax.vmap
+    def _timestep(A, B, C, x, u):
+        rhs = lambda t, x: A @ x + B @ u
+        next_x = _runge_kutta(rhs, 0, x, Ts)
+        y = C @ next_x
+        return next_x, y
 
-        next_x, y = _timestep(self.A, self.B, self.C, x, action)
-        return y, next_x
+    next_x, y = _timestep(A, B, C, x, action)
+    return y, next_x
 
-    @staticmethod
-    def _runge_kutta(rhs, t, x, dt):
-        h = dt
-        k1 = rhs(t, x)
-        k2 = rhs(t + h / 2, x + h * k1 / 2)
-        k3 = rhs(t + h / 2, x + h * k2 / 2)
-        k4 = rhs(t + h, x + h * k3)
-        dx = 1 / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-        return x + dt * dx
+def _runge_kutta(rhs, t, x, dt):
+    h = dt
+    k1 = rhs(t, x)
+    k2 = rhs(t + h / 2, x + h * k1 / 2)
+    k3 = rhs(t + h / 2, x + h * k2 / 2)
+    k4 = rhs(t + h, x + h * k3)
+    dx = 1 / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+    return x + dt * dx
 
 
-def generate_random_lti_systems(batch_size: int, state_dim: int, **kwargs) -> LTI:
+def generate_random_lti_systems(batch_size: int, state_dim: int, **kwargs):
     env = RandDynEnv(state_dim_min=state_dim, state_dim_max=state_dim, **kwargs)
     sss, refs = [], []
     for _ in range(batch_size):
@@ -58,7 +47,7 @@ def generate_random_lti_systems(batch_size: int, state_dim: int, **kwargs) -> LT
     B = jnp.stack([ss.B for ss in sss], axis=0)
     C = jnp.stack([ss.C for ss in sss], axis=0)
     refs = jnp.stack(refs, axis=0)
-    return LTI(batch_size, state_dim, A, B, C, refs, env.Ts)
+    return A, B, C, refs, jnp.array(env.Ts)
 
 
 class Controller(nn.Module):
@@ -115,7 +104,7 @@ def exploration_loss(u_seq):
 def update(
     apply_fn,
     params,
-    lti: LTI,
+    A, B, C, Ts,
     opt_state,
     refs,
     carry,
@@ -138,7 +127,7 @@ def update(
                 ),
                 controller_carry,
             )
-            y_t, x_t = lti.step(u_t, x_tm1)
+            y_t, x_t = _step_lti(A, B, C, u_t, x_tm1, Ts)
             return (controller_carry, x_t, y_t, u_t, (t + 1) / T), (u_t, y_t, yhat_t)
 
         carry, (us, ys, yhats) = jax.lax.scan(closed_loop, carry, refs)
@@ -200,13 +189,13 @@ def train_controller(
     )
 
     for step in range(steps):
-        lti = generate_random_lti_systems(batch_size, state_dim, **kwargs)
-        refs = lti.refs.transpose(1, 0, 2)
+        A, B, C, refs, Ts = generate_random_lti_systems(batch_size, state_dim, **kwargs)
+        refs = refs.transpose(1, 0, 2)
 
         params, opt_state, loss, _, loss_terms = update(
             controller.apply,
             params,
-            lti,
+            A, B, C, Ts,
             opt_state,
             refs,
             init,

@@ -16,6 +16,6 @@ cd $SLURM_SUBMIT_DIR
 module load Miniforge3
 
 # Activate Env
-conda activate jax_l2l
+conda activate l2l
 
 python train_BPTT_rnn.py
