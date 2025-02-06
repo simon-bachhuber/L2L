@@ -14,7 +14,11 @@
 
 ## Installation
 
-Requires `gymnasium, numpy, scikit-learn, matplotlib, python-control`
+The requirements are outlined in the `requirements.txt` file and grouped by the requirements of the `RandDynEnv` Environment and by the different training files.
+
+To get started on the cluster with a Nvidia GPU:
+1) Create a conda environment `conda create -n l2l python=3.12`
+2) Install all dependencies `pip install -r requirements.txt`
 
 ## Usage
 

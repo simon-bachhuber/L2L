@@ -1,5 +1,20 @@
-gymnasium
-stable-baselines3 >= 2.5.0
+# required dependencies of `rand_dyn_env.py`
 numpy
 scikit-learn
 control
+gymnasium
+# optinal depdency of `rand_dyn_env.py`
+matplotlib
+
+# depdenencies of `train_RL_mlp.py` and `train_RL_rnn.py`
+--extra-index-url https://download.pytorch.org/whl/cu126
+torch
+stable-baselines3[extra] >= 2.5.0
+sb3-contrib
+fire
+
+# depdenencies of `train_BPTT_rnn.py`
+jax[cuda12]
+ray[tune]
+flax
+optax
