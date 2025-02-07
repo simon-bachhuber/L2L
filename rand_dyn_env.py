@@ -32,6 +32,7 @@ class RandDynEnv(gym.Env):
         render_mode: str = "rgb_array",
         draw_step_function_reference: bool = False,
         scale_by_step_response: bool = True,
+        normalise_coutdown: bool = True,
     ):
         """
         Initialize a randomized dynamic environment for reinforcement learning.
@@ -122,6 +123,8 @@ class RandDynEnv(gym.Env):
         self._draw_step_function_reference = draw_step_function_reference
         self._scale_by_step_response = scale_by_step_response
         self.render_mode = render_mode
+        self.normalise_countdown = normalise_coutdown
+        self._countdown_maxval = 0.8 * T
 
         assert (
             n_inputs == 1
@@ -136,7 +139,11 @@ class RandDynEnv(gym.Env):
             {
                 "countdown": gym.spaces.Box(
                     low=np.array([0.0]),
-                    high=np.array([0.8 * T]),
+                    high=(
+                        np.array([1.0])
+                        if normalise_coutdown
+                        else np.array([self._countdown_maxval])
+                    ),
                     shape=(1,),
                     dtype=np.float64,
                 ),
@@ -249,7 +256,7 @@ class RandDynEnv(gym.Env):
 
     def draw_rand_transition_time(self):
         self.transition_time = self.np_random.uniform(
-            0.2 * self.T, 0.8 * self.T, size=(1,)
+            0.2 * self.T, self._countdown_maxval, size=(1,)
         )
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
@@ -311,10 +318,11 @@ class RandDynEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def _get_obs(self):
+        countdown = self.transition_time - self.ts[self._t][None]
+        if self.normalise_countdown:
+            countdown /= self._countdown_maxval
         return {
-            "countdown": np.clip(
-                self.transition_time - self.ts[self._t][None], a_max=None, a_min=0
-            ),
+            "countdown": np.clip(countdown, a_max=None, a_min=0),
             "ref": self._ref[self._t],
             "obs": self._ss.C @ self._x + self._ss.D @ self._u,
         }
