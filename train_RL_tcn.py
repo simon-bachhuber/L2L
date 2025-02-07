@@ -1,20 +1,24 @@
 import os
+
+from gymnasium import spaces
 from gymnasium import Wrapper
 import gymnasium as gym
-from PIL import Image
-from stable_baselines3 import PPO
-import torch
-import torch.nn as nn
-from stable_baselines3 import PPO
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.policies import ActorCriticPolicy
-from gymnasium import spaces
+from gymnasium.spaces import Box
+from gymnasium.spaces import Dict
+from gymnasium.spaces import Discrete
+from gymnasium.spaces import Tuple
 from gymnasium.wrappers import FrameStackObservation
 import numpy as np
-from gymnasium.spaces import Box, Discrete, Dict, Tuple
+from PIL import Image
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+import torch
+import torch.nn as nn
+
 import rand_dyn_env  # noqa: F401
-import gymnasium as gym
+
 
 class KeepLastWrapper(Wrapper):
     def __init__(self, env, features: list[str] = []):
@@ -23,14 +27,19 @@ class KeepLastWrapper(Wrapper):
         for feature in features:
             old_space = self.observation_space[feature]
             assert isinstance(old_space, spaces.Box)
-            self.observation_space[feature] = spaces.Box(old_space.low[-1], old_space.high[-1], old_space.shape[1:], old_space.dtype)
+            self.observation_space[feature] = spaces.Box(
+                old_space.low[-1],
+                old_space.high[-1],
+                old_space.shape[1:],
+                old_space.dtype,
+            )
 
     def step(self, action):
-        obs, rew, term, trunc, infos  = super().step(action)
+        obs, rew, term, trunc, infos = super().step(action)
         self._tranform_obs(obs)
         return obs, rew, term, trunc, infos
-    
-    def reset(self, *, seed = None, options = None):
+
+    def reset(self, *, seed=None, options=None):
         obs, info = super().reset(seed=seed, options=options)
         self._tranform_obs(obs)
         return obs, info
@@ -39,17 +48,31 @@ class KeepLastWrapper(Wrapper):
         for feature in self.features:
             obs[feature] = obs[feature][-1]
 
+
 class ActionFeedbackWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.last_action = np.zeros(env.action_space.shape, dtype=env.action_space.dtype) \
-            if isinstance(env.action_space, Box) else 0
+        self.last_action = (
+            np.zeros(env.action_space.shape, dtype=env.action_space.dtype)
+            if isinstance(env.action_space, Box)
+            else 0
+        )
 
         # Modify observation space to include last action
         obs_space = env.observation_space
         if isinstance(obs_space, Box):
-            low = np.concatenate([obs_space.low, np.full(self.last_action.shape, env.action_space.low.min())])
-            high = np.concatenate([obs_space.high, np.full(self.last_action.shape, env.action_space.high.max())])
+            low = np.concatenate(
+                [
+                    obs_space.low,
+                    np.full(self.last_action.shape, env.action_space.low.min()),
+                ]
+            )
+            high = np.concatenate(
+                [
+                    obs_space.high,
+                    np.full(self.last_action.shape, env.action_space.high.max()),
+                ]
+            )
             self.observation_space = Box(low=low, high=high, dtype=obs_space.dtype)
         elif isinstance(obs_space, Discrete):
             self.observation_space = Tuple((obs_space, env.action_space))
@@ -79,6 +102,7 @@ class ActionFeedbackWrapper(gym.Wrapper):
             return obs
         return obs
 
+
 class MultiInputTCNExtractor(BaseFeaturesExtractor):
     """
     Feature extractor for dictionary observations:
@@ -87,7 +111,9 @@ class MultiInputTCNExtractor(BaseFeaturesExtractor):
     """
 
     def __init__(self, observation_space: spaces.Dict):
-        super(MultiInputTCNExtractor, self).__init__(observation_space, features_dim=1)  # Temporary
+        super(MultiInputTCNExtractor, self).__init__(
+            observation_space, features_dim=1
+        )  # Temporary
 
         self.extractors = nn.ModuleDict()
         self.passthrough_keys = []  # Keys that remain unchanged
@@ -102,14 +128,32 @@ class MultiInputTCNExtractor(BaseFeaturesExtractor):
                 n_features = subspace.shape[1]  # Number of input channels (F)
 
                 tcn = nn.Sequential(
-                    nn.Conv1d(in_channels=n_features, out_channels=16, kernel_size=5, stride=2, padding=2),
+                    nn.Conv1d(
+                        in_channels=n_features,
+                        out_channels=16,
+                        kernel_size=5,
+                        stride=2,
+                        padding=2,
+                    ),
                     nn.ReLU(),
-                    nn.Conv1d(in_channels=16, out_channels=32, kernel_size=5, stride=2, padding=2),
+                    nn.Conv1d(
+                        in_channels=16,
+                        out_channels=32,
+                        kernel_size=5,
+                        stride=2,
+                        padding=2,
+                    ),
                     nn.ReLU(),
-                    nn.Conv1d(in_channels=32, out_channels=64, kernel_size=5, stride=2, padding=2),
+                    nn.Conv1d(
+                        in_channels=32,
+                        out_channels=64,
+                        kernel_size=5,
+                        stride=2,
+                        padding=2,
+                    ),
                     nn.ReLU(),
                     nn.AdaptiveAvgPool1d(1),  # Reduce to shape (batch, 64, 1)
-                    nn.Flatten()  # Output shape: (batch, 64)
+                    nn.Flatten(),  # Output shape: (batch, 64)
                 )
 
                 self.extractors[key] = tcn
@@ -121,7 +165,9 @@ class MultiInputTCNExtractor(BaseFeaturesExtractor):
         extracted_features = []
 
         for key in self.passthrough_keys:
-            extracted_features.append(observations[key])  # Directly pass scalar features
+            extracted_features.append(
+                observations[key]
+            )  # Directly pass scalar features
 
         for key, extractor in self.extractors.items():
             x = observations[key]  # Time-series tensor (batch, N, F)
@@ -139,8 +185,8 @@ class MultiInputTCNPolicy(ActorCriticPolicy):
             action_space,
             lr_schedule,
             use_sde=use_sde,  # ✅ Pass use_sde explicitly
-            features_extractor_class=MultiInputTCNExtractor,  # ✅ Use the custom feature extractor
-            **kwargs  # ✅ Pass all remaining policy arguments
+            features_extractor_class=MultiInputTCNExtractor,  # ✅ Use the custom feature extractor # noqa: E501
+            **kwargs,  # ✅ Pass all remaining policy arguments
         )
 
 
@@ -162,7 +208,7 @@ class SaveImageOnResetWrapper(Wrapper):
             )
         # Call the original reset method
         return self.env.reset(**kwargs)
-    
+
 
 def env_fn():
     Ts = 0.04
@@ -174,5 +220,6 @@ def env_fn():
     return env
 
 
-model = PPO(MultiInputTCNPolicy, make_vec_env(env_fn))
-model.learn(total_timesteps=1_000_000, progress_bar=True)
+if __name__ == "__main__":
+    model = PPO(MultiInputTCNPolicy, make_vec_env(env_fn))
+    model.learn(total_timesteps=1_000_000, progress_bar=True)

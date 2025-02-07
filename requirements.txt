@@ -3,10 +3,10 @@ numpy
 scikit-learn
 control
 gymnasium
-# optinal depdency of `rand_dyn_env.py`
+# optinal depdency requried for rendering in `rand_dyn_env.py`
 matplotlib
 
-# depdenencies of `train_RL_mlp.py` and `train_RL_rnn.py`
+# depdenencies of `train_RL_mlp.py`, `train_RL_tcn.py`, and `train_RL_rnn.py`
 --extra-index-url https://download.pytorch.org/whl/cu126
 torch
 stable-baselines3[extra] >= 2.5.0

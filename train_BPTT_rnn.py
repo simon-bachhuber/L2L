@@ -11,7 +11,6 @@ from ray.tune.schedulers import ASHAScheduler
 from rand_dyn_env import RandDynEnv
 
 
-
 def _step_lti(A, B, C, action, x, Ts):
     "Returns: (y, next_x)"
 
@@ -24,6 +23,7 @@ def _step_lti(A, B, C, action, x, Ts):
 
     next_x, y = _timestep(A, B, C, x, action)
     return y, next_x
+
 
 def _runge_kutta(rhs, t, x, dt):
     h = dt
@@ -104,7 +104,10 @@ def exploration_loss(u_seq):
 def update(
     apply_fn,
     params,
-    A, B, C, Ts,
+    A,
+    B,
+    C,
+    Ts,
     opt_state,
     refs,
     carry,
@@ -195,7 +198,10 @@ def train_controller(
         params, opt_state, loss, _, loss_terms = update(
             controller.apply,
             params,
-            A, B, C, Ts,
+            A,
+            B,
+            C,
+            Ts,
             opt_state,
             refs,
             init,
